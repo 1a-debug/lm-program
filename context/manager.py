@@ -1,0 +1,260 @@
+from datetime import datetime
+import json
+from typing import Any
+from client.response import TokenUsage
+from config.config import Config
+from prompts.system import get_system_prompt
+from skills.models import SkillDefinition
+from dataclasses import dataclass, field
+
+from tools.base import Tool
+from utils.text import count_tokens
+
+
+@dataclass
+class MessageItem:
+    role: str
+    content: str
+    tool_call_id: str | None = None
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    token_count: int | None = None
+    pruned_at: datetime | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {"role": self.role}
+
+        if self.tool_call_id:
+            result["tool_call_id"] = self.tool_call_id
+
+        if self.tool_calls:
+            result["tool_calls"] = self.tool_calls
+
+        # `content` is required by the API for tool messages and for assistant
+        # messages that carry no tool_calls. A quiet shell command returns "",
+        # and dropping the field here produces a message the API rejects, which
+        # then poisons every subsequent request in the session.
+        requires_content = self.role == "tool" or (
+            self.role == "assistant" and not self.tool_calls
+        )
+        if self.content or requires_content:
+            result["content"] = self.content
+
+        return result
+
+
+class ContextManager:
+    PRUNE_PROTECT_TOKENS = 40_000
+    PRUNE_MINIMUM_TOKENS = 20_000
+
+    def __init__(
+        self,
+        config: Config,
+        user_memory: str | None,
+        tools: list[Tool] | None,
+        skills: list[SkillDefinition] | None,
+        project_context: str | None = None,
+    ) -> None:
+        self.config = config
+        self._user_memory = user_memory
+        self._tools = tools
+        self._skills = skills or []
+        self._project_context = project_context
+        self._model_name = self.config.model_name
+        self._messages: list[MessageItem] = []
+        self._latest_usage = TokenUsage()
+        self.total_usage = TokenUsage()
+
+    @property
+    def message_count(self) -> int:
+        return len(self._messages)
+
+    def add_user_message(self, content: str) -> None:
+        item = MessageItem(
+            role="user",
+            content=content,
+            token_count=count_tokens(
+                content,
+                self._model_name,
+            ),
+        )
+
+        self._messages.append(item)
+
+    def add_assistant_message(
+        self,
+        content: str,
+        tool_calls: list[dict[str, any]] | None = None,
+    ) -> None:
+        item = MessageItem(
+            role="assistant",
+            content=content or "",
+            token_count=count_tokens(
+                content or "",
+                self._model_name,
+            ),
+            tool_calls=tool_calls or [],
+        )
+
+        self._messages.append(item)
+
+    def add_tool_result(self, tool_call_id: str, content: str) -> None:
+        item = MessageItem(
+            role="tool",
+            content=content,
+            tool_call_id=tool_call_id,
+            token_count=count_tokens(content, self._model_name),
+        )
+
+        self._messages.append(item)
+
+    def get_messages(self) -> list[dict[str, Any]]:
+        messages = []
+
+        system_prompt = self._build_system_prompt()
+        if system_prompt:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                }
+            )
+
+        for item in self._messages:
+            messages.append(item.to_dict())
+
+        return messages
+
+    def _build_system_prompt(self) -> str:
+        active_skills = self._get_active_skills()
+        return get_system_prompt(
+            self.config,
+            self._user_memory,
+            self._tools,
+            available_skills=self._skills,
+            active_skills=active_skills,
+            project_context=self._project_context,
+        )
+
+    def _get_active_skills(self) -> list[SkillDefinition]:
+        if not self._skills or not self.config.skills_enabled:
+            return []
+
+        allowed = {name.casefold() for name in self.config.allowed_skills or []}
+        always_loaded = {name.casefold() for name in self.config.always_loaded_skills}
+        query_parts = [
+            message.content
+            for message in self._messages
+            if message.role == "user" and message.content
+        ]
+        normalized_query = " ".join(" ".join(query_parts).casefold().split())
+        active_skills: list[SkillDefinition] = []
+
+        for skill in self._skills:
+            skill_name = skill.name.casefold()
+            if allowed and skill_name not in allowed:
+                continue
+
+            trigger_match = any(
+                trigger.casefold() in normalized_query for trigger in skill.triggers
+            )
+            name_match = skill_name in normalized_query if normalized_query else False
+
+            if (
+                skill.always_include
+                or skill_name in always_loaded
+                or trigger_match
+                or name_match
+            ):
+                active_skills.append(skill)
+
+        return active_skills
+
+    def needs_compression(self) -> bool:
+        context_limit = self.config.model.context_window
+        current_tokens = self.estimate_context_tokens()
+
+        return current_tokens > (context_limit * 0.8)
+
+    def estimate_context_tokens(self) -> int:
+        total_tokens = 0
+
+        system_prompt = self._build_system_prompt()
+        if system_prompt:
+            total_tokens += count_tokens(system_prompt, self._model_name)
+
+        for item in self._messages:
+            total_tokens += self._estimate_message_tokens(item)
+
+        return total_tokens
+
+    def _estimate_message_tokens(self, item: MessageItem) -> int:
+        payload = item.to_dict()
+        serialized = json.dumps(payload, ensure_ascii=False)
+        return count_tokens(serialized, self._model_name)
+
+    def set_latest_usage(self, usage: TokenUsage):
+        self._latest_usage = usage
+
+    def add_usage(self, usage: TokenUsage):
+        self.total_usage += usage
+
+    def replace_with_summary(self, summary: str) -> None:
+        continuation_content = f"""# Context Restoration (Previous Session Compacted)
+
+The previous conversation was compacted due to context length limits. Below is a detailed summary of the work done so far.
+
+Actions listed under "COMPLETED ACTIONS" are already done. Do not repeat them.
+
+---
+
+{summary}
+
+---
+
+Resume work from where we left off. Focus only on the remaining tasks and treat this summary as authoritative context."""
+
+        summary_item = MessageItem(
+            role="user",
+            content=continuation_content,
+            token_count=count_tokens(continuation_content, self._model_name),
+        )
+        # Commit only after the replacement message is fully built.
+        self._messages = [summary_item]
+
+    def prune_tool_outputs(self) -> int:
+        user_message_count = sum(1 for msg in self._messages if msg.role == "user")
+
+        if user_message_count < 2:
+            return 0
+
+        total_tokens = 0
+        pruned_tokens = 0
+        to_prune: list[MessageItem] = []
+
+        for msg in reversed(self._messages):
+            if msg.role == "tool" and msg.tool_call_id:
+                if msg.pruned_at:
+                    break
+
+                tokens = msg.token_count or count_tokens(msg.content, self._model_name)
+                total_tokens += tokens
+
+                if total_tokens > self.PRUNE_PROTECT_TOKENS:
+                    pruned_tokens += tokens
+                    to_prune.append(msg)
+
+        if pruned_tokens < self.PRUNE_MINIMUM_TOKENS:
+            return 0
+
+        pruned_count = 0
+
+        for msg in to_prune:
+            msg.content = "[Old tool result content cleared]"
+            msg.token_count = count_tokens(msg.content, self._model_name)
+            msg.pruned_at = datetime.now()
+            pruned_count += 1
+
+        return pruned_count
+
+    def clear(self) -> None:
+        self._messages = []

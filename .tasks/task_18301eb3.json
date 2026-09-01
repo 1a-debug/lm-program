@@ -1,0 +1,15 @@
+{
+  "id": "task_18301eb3",
+  "subject": "\u66f4\u65b0 README",
+  "description": "\u5728 README.md \u4e2d\u589e\u52a0\u4e00\u884c \"Task planning enabled\"",
+  "status": "completed",
+  "owner": "agent",
+  "blockedBy": [],
+  "todos": [
+    {
+      "id": "f8d42f",
+      "content": "\u5728 README.md \u4e2d\u589e\u52a0 \"Task planning enabled\" \u4e00\u884c",
+      "completed": true
+    }
+  ]
+}

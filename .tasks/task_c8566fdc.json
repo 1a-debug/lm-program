@@ -1,0 +1,28 @@
+{
+  "id": "task_c8566fdc",
+  "subject": "\u9a8c\u8bc1\u4efb\u52a1\u89c4\u5212",
+  "description": "Created from the command line.",
+  "status": "paused",
+  "owner": "agent",
+  "blockedBy": [],
+  "todos": [
+    {
+      "id": "6b4b01",
+      "content": "\u521b\u5efa\u4efb\u52a1\u6e05\u5355",
+      "completed": false
+    },
+    {
+      "id": "4f15bd",
+      "content": "\u6682\u505c\u4efb\u52a1",
+      "completed": false
+    },
+    {
+      "id": "719a61",
+      "content": "\u6062\u590d\u4efb\u52a1",
+      "completed": false
+    }
+  ],
+  "attempts": 1,
+  "max_retries": 2,
+  "last_error": "Interrupted by user"
+}

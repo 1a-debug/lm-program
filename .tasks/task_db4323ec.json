@@ -1,0 +1,17 @@
+{
+  "id": "task_db4323ec",
+  "subject": "\u8fd0\u884c\u76f8\u5173\u6d4b\u8bd5",
+  "description": "\u8fd0\u884c\u9879\u76ee\u7684\u5355\u5143\u6d4b\u8bd5\u4ee5\u9a8c\u8bc1\u66f4\u6539",
+  "status": "completed",
+  "owner": "agent",
+  "blockedBy": [
+    "task_18301eb3"
+  ],
+  "todos": [
+    {
+      "id": "7c42ab",
+      "content": "\u8fd0\u884c\u9879\u76ee\u7684\u5355\u5143\u6d4b\u8bd5",
+      "completed": true
+    }
+  ]
+}
