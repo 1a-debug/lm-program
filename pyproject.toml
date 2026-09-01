@@ -3,14 +3,14 @@ requires = ["setuptools>=80", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "code-it"
+name = "lm-agent"
 version = "0.1.0"
 description = "A terminal-based OpenAI-compatible coding agent with tools, approvals, MCP, and session persistence."
 readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
 authors = [
-  { name = "nick211908" },
+  { name = "1a-debug" },
 ]
 keywords = ["agent", "cli", "coding", "openai", "mcp"]
 classifiers = [
@@ -45,9 +45,9 @@ dev = [
 code-it = "main:main"
 
 [project.urls]
-Homepage = "https://github.com/nick211908/coding-agent"
-Issues = "https://github.com/nick211908/coding-agent/issues"
-Repository = "https://github.com/nick211908/coding-agent"
+Homepage = "https://github.com/1a-debug/lm-program"
+Issues = "https://github.com/1a-debug/lm-program/issues"
+Repository = "https://github.com/1a-debug/lm-program"
 
 [tool.setuptools]
 py-modules = ["main"]

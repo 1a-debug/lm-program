@@ -1,4 +1,4 @@
-# code-it
+# lm-program
 
 Task planning enabled
 
@@ -30,7 +30,7 @@ This creates:
 After syncing the project environment, configure credentials:
 
 ```bash
-uv run code-it --configure
+uv run lm-program --configure
 ```
 
 This prompts for:
@@ -41,9 +41,9 @@ This prompts for:
 
 The values are saved in your user config file at:
 
-- Windows: `%APPDATA%\code-it\config.toml`
-- macOS: `~/Library/Application Support/code-it/config.toml`
-- Linux: `~/.config/code-it/config.toml`
+- Windows: `%APPDATA%\lm-program\config.toml`
+- macOS: `~/Library/Application Support/lm-program/config.toml`
+- Linux: `~/.config/lm-program/config.toml`
 
 You can still use a project-local `.env` file or `API_KEY` and `BASE_URL` environment variables, but they are no longer required for packaged installs.
 
@@ -52,25 +52,25 @@ You can still use a project-local `.env` file or `API_KEY` and `BASE_URL` enviro
 Run interactively:
 
 ```bash
-uv run code-it
+uv run lm-program
 ```
 
 Run a single prompt:
 
 ```bash
-uv run code-it "Summarize what this repo does"
+uv run lm-program "Summarize what this repo does"
 ```
 
 Target a specific working directory:
 
 ```bash
-uv run code-it --cwd /path/to/project "Find and fix the failing test"
+uv run lm-program --cwd /path/to/project "Find and fix the failing test"
 ```
 
 Update saved credentials later:
 
 ```bash
-uv run code-it --configure
+uv run lm-program --configure
 ```
 
 Inside an interactive session:
@@ -110,7 +110,7 @@ rejects them.
 
 ## Automatic Verification
 
-After a successful edit to a source file, code-it runs checks declared by the
+After a successful edit to a source file, lm-program runs checks declared by the
 project: Python repositories can run configured Ruff/Mypy checks and unit tests;
 Node repositories can run declared format, lint, typecheck, test, and build
 scripts. Failed output is returned to the agent so it can fix the issue and the
@@ -131,9 +131,9 @@ You can also add:
 1. Bump `version` in `pyproject.toml`.
 2. Run tests.
 3. Build the wheel and sdist with `uv build --no-sources`.
-4. Test the CLI with `uv run code-it --configure`.
+4. Test the CLI with `uv run lm-program --configure`.
 5. Upload to TestPyPI.
-6. Verify both `uv run code-it --configure` and `uv run code-it` work.
+6. Verify both `uv run lm-program --configure` and `uv run lm-program` work.
 7. Publish to PyPI.
 
 ## Publish With uv
@@ -162,7 +162,7 @@ $env:UV_PUBLISH_TOKEN="pypi-***"
 uv publish
 ```
 
-For the first release, verify the package name on PyPI before publishing. If `code-it` is already taken, rename `project.name` in `pyproject.toml` before uploading.
+For the first release, verify the package name on PyPI before publishing. If `lm-program` is already taken, rename `project.name` in `pyproject.toml` before uploading.
 
 ## Trusted Publishing
 
