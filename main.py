@@ -72,11 +72,12 @@ class CLI:
         from agent.agent import Agent
 
         self.tui.print_welcome(
-            "code-it",
+            "lm-program",
             lines=[
                 f"model: {self.config.model_name}",
                 f"cwd: {self.config.cwd}",
-                "commands: /help /config /approval /setup /model /exit",
+                "features: Guardian + Blocker Gate",
+                "commands: /help /config /approval /setup /model /trust /guardian-demo /demo-reset /exit",
             ],
         )
 
@@ -145,6 +146,14 @@ class CLI:
             elif event.type == AgentEventType.COMPACTION_ERROR:
                 error = event.data.get("error", "Compaction failed")
                 console.print(f"\n[error]Context compaction failed: {error}[/error]")
+            elif event.type == AgentEventType.GUARDIAN_ALERT:
+                message = event.data.get("message", "Agent Guardian alert")
+                console.print(f"\n[warning]Guardian: {message}[/warning]")
+            elif event.type == AgentEventType.TRUST_REPORT:
+                self._show_trust_report(event.data.get("report", {}))
+            elif event.type == AgentEventType.BLOCKER_DETECTED:
+                reason = event.data.get("reason", "External blocker detected")
+                console.print(f"\n[warning]Blocker Gate: {reason}[/warning]")
             elif event.type == AgentEventType.TOOL_CALL_START:
                 tool_name = event.data.get("name", "unknown")
                 tool_kind = self._get_tool_kind(tool_name)
@@ -171,6 +180,50 @@ class CLI:
                 )
 
         return final_response
+
+    def _show_trust_report(self, report: dict) -> None:
+        if not report:
+            console.print("[dim]No Agent Guardian report is available.[/dim]")
+            return
+        status = report.get("status", "UNKNOWN")
+        score = report.get("score", 0)
+        color = "green" if status in {"TRUSTED", "PROTECTED"} else "yellow"
+        score_text = f"{score}/100" if score is not None else "N/A"
+        console.print("\n[bold]Agent Guardian Trust Report[/bold]")
+        console.print(f"  Status: [{color}]{status}[/{color}]")
+        console.print(f"  Trust score: {score_text}")
+        console.print(
+            "  Test integrity: "
+            + ("PASSED" if report.get("protected_files_unchanged") else "VIOLATION RESTORED")
+        )
+        console.print(
+            f"  Tests: {report.get('test_runs', 0)} runs, "
+            f"{report.get('successful_test_runs', 0)} passed, "
+            f"{report.get('failed_test_runs', 0)} failed"
+        )
+        console.print(
+            f"  Prompt-injection findings: {len(report.get('injection_findings', []))}"
+        )
+        console.print(f"  Blocked actions: {len(report.get('blocked_actions', []))}")
+        blocker = report.get("blocker_gate")
+        if isinstance(blocker, dict):
+            blocker_active = bool(blocker.get("blocked"))
+            blocker_color = "yellow" if blocker_active else "green"
+            blocker_label = "ACTIVATED" if blocker_active else "clear"
+            console.print(
+                f"  Blocker Gate: [{blocker_color}]{blocker_label}[/{blocker_color}]"
+            )
+            if blocker_active and blocker.get("reason"):
+                console.print(f"  Blocker reason: {blocker['reason']}")
+        changed = report.get("files_changed", [])
+        if changed:
+            console.print(f"  Changed files: {', '.join(changed)}")
+        for finding in report.get("injection_findings", []):
+            console.print(
+                f"  [warning]Warning: {finding.get('category')} in {finding.get('path')}[/warning]"
+            )
+        for violation in report.get("integrity_violations", []):
+            console.print(f"  [error]{violation}[/error]")
 
     def _pause_active_tasks(self, reason: str) -> None:
         from tools.builtin.tasks import TaskStore
@@ -247,6 +300,79 @@ class CLI:
             console.print("\n[bold]Session Statistics [/bold]")
             for key, value in stats.items():
                 console.print(f"   {key}: {value}")
+        elif cmd_name == "/trust":
+            report = self.agent.session.guardian.final_report().to_dict()
+            report["blocker_gate"] = self.agent.session.blocker_gate.stats()
+            self._show_trust_report(report)
+        elif cmd_name == "/guardian-demo":
+            from safety.guardian import run_guardian_self_test
+
+            result = run_guardian_self_test()
+            console.print("\n[bold]Agent Guardian Deterministic Self-Test[/bold]")
+            console.print(f"  Run ID: {result['run_id']} (live local execution)")
+            for index, step in enumerate(result["steps"], start=1):
+                status = "PASS" if step["passed"] else "FAIL"
+                color = "green" if step["passed"] else "red"
+                console.print(
+                    f"  [{color}][{index}/3] {status}[/{color}] {step['name']}"
+                )
+                console.print(f"        {step['detail']}")
+            overall = "PASSED" if result["passed"] else "FAILED"
+            color = "green" if result["passed"] else "red"
+            console.print(f"\n  Guardian self-test: [{color}]{overall}[/{color}]")
+            report = result["report"]
+            evidence = result["evidence"]
+            console.print("\n[bold]Containment Evidence (simulated attacks)[/bold]")
+            console.print(
+                f"  Scenarios contained: {sum(step['passed'] for step in result['steps'])}/"
+                f"{len(result['steps'])}"
+            )
+            console.print(
+                "  Protected test restored: "
+                + ("YES" if report.get("integrity_violations") else "NO")
+            )
+            console.print(
+                f"  Injection signals detected: {len(report.get('injection_findings', []))}"
+            )
+            console.print(
+                f"  Dangerous actions blocked: {len(report.get('blocked_actions', []))}"
+            )
+            console.print(
+                f"  Original SHA-256: {evidence['original_test_sha256'][:16]}..."
+            )
+            console.print(
+                f"  Tampered SHA-256: {evidence['tampered_test_sha256'][:16]}..."
+            )
+            console.print(
+                f"  Restored SHA-256: {evidence['restored_test_sha256'][:16]}... "
+                + ("MATCH" if evidence["restoration_verified"] else "MISMATCH")
+            )
+            console.print(
+                "  Temporary workspace cleaned: "
+                + ("YES" if evidence["temporary_workspace_removed"] else "NO")
+            )
+            console.print(
+                "  [dim]Note: these are deliberate attacks in a temporary self-test directory.[/dim]"
+            )
+        elif cmd_name == "/demo-reset":
+            demo_source = self.config.cwd / "calculator.py"
+            demo_test = self.config.cwd / "test_calculator.py"
+            if not demo_source.exists() or not demo_test.exists():
+                console.print(
+                    "[error]/demo-reset is only available in the calculator demo directory.[/error]"
+                )
+            else:
+                demo_source.write_text(
+                    "def add(a: float, b: float) -> float:\n"
+                    "    return a + b\n\n\n"
+                    "def divide(a: float, b: float) -> float:\n"
+                    "    \"\"\"Divide a by b.\"\"\"\n"
+                    "    return a / b\n",
+                    encoding="utf-8",
+                )
+                console.print(
+                    "[success]Calculator demo reset: implementation bug restored; tests unchanged.[/success]"
+                )
         elif cmd_name == "/tools":
             tools = self.agent.session.tool_registry.get_tools()
             console.print(f"\n[bold]Available tools ({len(tools)}) [/bold]")
@@ -451,7 +577,7 @@ def main(prompt: str | None, cwd: Path | None, configure: bool) -> None:
             config = configure_credentials_interactively(config)
         else:
             console.print(
-                "[error]No API key found. Run `code-it --configure` to save one.[/error]"
+                "[error]No API key found. Run `lm-program --configure` to save one.[/error]"
             )
             sys.exit(1)
 

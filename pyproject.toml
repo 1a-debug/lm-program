@@ -3,9 +3,9 @@ requires = ["setuptools>=80", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lm-agent"
+name = "lm-program"
 version = "0.1.0"
-description = "A terminal-based OpenAI-compatible coding agent with tools, approvals, MCP, and session persistence."
+description = "my-ai-agent"
 readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
@@ -42,7 +42,7 @@ dev = [
 ]
 
 [project.scripts]
-code-it = "main:main"
+lm-program = "main:main"
 
 [project.urls]
 Homepage = "https://github.com/1a-debug/lm-program"

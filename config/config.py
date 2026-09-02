@@ -156,7 +156,7 @@ class Config(BaseModel):
 
         if not self.api_key:
             errors.append(
-                "No API key found. Run `code-it --configure` or set API_KEY."
+                "No API key found. Run `lm-program --configure` or set API_KEY."
             )
 
         if not self.cwd.exists():

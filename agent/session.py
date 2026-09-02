@@ -6,11 +6,13 @@ from client.llm_client import LLMClient
 from config.config import Config
 from config.loader import get_data_dir
 from context.compaction import ChatCompactor
+from context.blocker import BlockerGate
 from context.loop_detector import LoopDetector
 from context.manager import ContextManager
 from context.project import build_project_context
 from hooks.hook_system import HookSystem
 from safety.approval import ApprovalManager
+from safety.guardian import AgentGuardian
 from skills import SkillDiscoveryManager, SkillRegistry
 from tools.discovery import ToolDiscoveryManager
 from tools.mcp.mcp_manager import MCPManager
@@ -39,7 +41,9 @@ class Session:
             self.config.approval,
             self.config.cwd,
         )
+        self.guardian = AgentGuardian(self.config.cwd)
         self.loop_detector = LoopDetector()
+        self.blocker_gate = BlockerGate()
         self.hook_system = HookSystem(config)
         self.session_id = str(uuid.uuid4())
         self.created_at = datetime.now()
@@ -100,4 +104,5 @@ class Session:
             "token_usage": self.context_manager.total_usage,
             "tools_count": len(self.tool_registry.get_tools()),
             "mcp_servers": len(self.tool_registry.connected_mcp_servers),
+            "blocker_gate": self.blocker_gate.stats(),
         }

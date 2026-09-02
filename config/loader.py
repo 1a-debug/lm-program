@@ -15,7 +15,7 @@ from utils.errors import ConfigError
 
 logger = logging.getLogger(__name__)
 
-APP_NAME = "code-it"
+APP_NAME = "lm-program"
 CONFIG_FILE_NAME = "config.toml"
 AGENT_MD_FILE = "AGENT.MD"
 PROJECT_CONFIG_DIR_NAME = ".ai-agent"

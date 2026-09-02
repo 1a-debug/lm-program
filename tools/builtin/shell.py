@@ -136,7 +136,9 @@ class ShellTool(Tool):
         return ToolResult(
             success=exit_code == 0,
             output=output,
-            error=stderr if exit_code != 0 else None,
+            # stderr is already included in output above. Keep error concise so
+            # the TUI and model output do not print the same traceback twice.
+            error=f"Command exited with code {exit_code}" if exit_code != 0 else None,
             exit_code=exit_code,
         )
 

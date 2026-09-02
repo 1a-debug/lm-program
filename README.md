@@ -22,8 +22,8 @@ uv build
 
 This creates:
 
-- `dist/code_it-<version>-py3-none-any.whl`
-- `dist/code_it-<version>.tar.gz`
+- `dist/lm_program-<version>-py3-none-any.whl`
+- `dist/lm_program-<version>.tar.gz`
 
 ## First Run
 
@@ -86,6 +86,9 @@ Inside an interactive session:
 [user]> /resume <session_id>    # resume a saved session
 [user]> /checkpoint             # snapshot the current session
 [user]> /stats                  # show token/turn usage stats
+[user]> /trust                  # show the latest Agent Guardian report
+[user]> /guardian-demo          # run deterministic Guardian security self-tests
+[user]> /demo-reset             # restore the calculator demo's initial bug
 [user]> /tasks                  # list persisted task plans and retry state
 [user]> /plan <title> | <step>  # create a task plan without the model
 [user]> /continue-task <id>     # resume a paused task plan
@@ -99,6 +102,42 @@ to pause it. Resume the saved session with `/resume <session_id>` and ask the
 agent to continue; it will resume the paused plan. Read-only tool calls are
 retried once automatically. Write, shell, network, and task-management calls
 are never automatically repeated because they can have side effects.
+
+## Agent Guardian
+
+Every user task runs under a deterministic local supervision layer that is
+separate from the language model:
+
+- **Test Integrity Guard** snapshots existing test files before the task. Direct
+  edits to those files are blocked. If a shell command changes or deletes one,
+  the original content is restored and the violation is returned to the model.
+- **Prompt-Injection Firewall** treats repository files as untrusted data. It
+  detects instruction overrides, secret-exfiltration requests, agent
+  impersonation, and destructive instructions. After a finding, network, MCP,
+  memory, and non-read-only shell actions are blocked while ordinary repository
+  inspection and test commands remain available.
+- **Trust Report** records inspected and changed files, commands, test outcomes,
+  injection findings, blocked actions, and integrity violations. A deterministic
+  score is displayed after each task and is also available with `/trust`.
+
+The Guardian does not ask the model whether its own behavior was safe. Its
+decisions are derived from local files, tool kinds, command results, and test
+snapshots.
+
+## Blocker Gate
+
+The agent stops exploring when a task cannot proceed without unavailable
+external prerequisites. If a live or private integration explicitly lacks two
+or more of its SDK, credentials, or API documentation, tools are disabled before
+the first model turn and the agent must report the minimum inputs needed to
+continue.
+
+During execution, the Semantic Attempt Tracker groups differently worded shell
+commands by objective. Repeated package checks such as `import package`, `pip
+show package`, and `find_spec(package)` share one retry budget. Two repeated
+failures for the same objective, or two shell-syntax failures, activate the
+Blocker Gate. This prevents endless environment probing and diagnostic files
+when no meaningful progress is possible.
 
 ## Safety Confirmations
 

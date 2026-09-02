@@ -22,9 +22,19 @@ class Agent:
         self.session.approval_manager.confirmation_callback = confirmation_callback
 
     async def run(self, message: str):
+        self.session.guardian.start_task(message)
+        blocker_reason = self.session.blocker_gate.start_task(message)
         await self.session.hook_system.trigger_before_agent(message)
         yield AgentEvent.agent_start(message)
         self.session.context_manager.add_user_message(message)
+        if blocker_reason:
+            blocker_notice = self.session.blocker_gate.consume_notice()
+            if blocker_notice:
+                self.session.context_manager.add_user_message(blocker_notice)
+            yield AgentEvent.blocker_detected(
+                blocker_reason,
+                self.session.blocker_gate.stats(),
+            )
 
         final_response: str | None = None
 
@@ -35,6 +45,9 @@ class Agent:
                 final_response = event.data.get("content")
 
         await self.session.hook_system.trigger_after_agent(message, final_response)
+        trust_report = self.session.guardian.final_report().to_dict()
+        trust_report["blocker_gate"] = self.session.blocker_gate.stats()
+        yield AgentEvent.trust_report(trust_report)
         yield AgentEvent.agent_end(final_response)
 
     def _should_enable_tools(self, message: str) -> bool:
@@ -61,7 +74,10 @@ class Agent:
 
     async def _agentic_loop(self, latest_user_message: str) -> AsyncGenerator[AgentEvent, None]:
         max_turns = self.config.max_turns
-        enable_tools = self._should_enable_tools(latest_user_message)
+        enable_tools = (
+            self._should_enable_tools(latest_user_message)
+            and not self.session.blocker_gate.blocked
+        )
 
         for turn_num in range(max_turns):
             self.session.increment_turn()
@@ -164,19 +180,24 @@ class Agent:
                     args=tool_call.arguments,
                 )
 
-                result = await self.session.tool_registry.invoke(
-                    tool_call.name,
-                    tool_call.arguments,
-                    self.config.cwd,
-                    self.session.hook_system,
-                    self.session.approval_manager,
-                )
-
-                # Read-only operations are safe to retry once for transient failures.
-                # Mutating tools are never retried automatically because they may have
-                # partially completed before returning an error.
                 tool = self.session.tool_registry.get(tool_call.name)
-                if not result.success and tool and not tool.is_mutating(tool_call.arguments):
+                blocker_result = self.session.blocker_gate.before_tool(tool_call.name)
+                guardian_block = None
+                if tool:
+                    guardian_block = self.session.guardian.before_tool(
+                        tool_call.name,
+                        tool_call.arguments,
+                        tool.kind,
+                    )
+                if blocker_result:
+                    result = blocker_result
+                elif guardian_block:
+                    result = guardian_block
+                    yield AgentEvent.guardian_alert(
+                        guardian_block.error or "Agent Guardian blocked an action.",
+                        guardian_block.metadata,
+                    )
+                else:
                     result = await self.session.tool_registry.invoke(
                         tool_call.name,
                         tool_call.arguments,
@@ -184,6 +205,53 @@ class Agent:
                         self.session.hook_system,
                         self.session.approval_manager,
                     )
+
+                    if tool:
+                        result = self.session.guardian.after_tool(
+                            tool_call.name,
+                            tool_call.arguments,
+                            tool.kind,
+                            result,
+                        )
+                        if result.metadata.get("guardian_injection_warning"):
+                            yield AgentEvent.guardian_alert(
+                                "Suspicious instructions detected in untrusted repository content.",
+                                result.metadata,
+                            )
+                        if result.metadata.get("guardian_restored_tests"):
+                            yield AgentEvent.guardian_alert(
+                                result.error or "Protected tests were restored.",
+                                result.metadata,
+                            )
+
+                # Read-only operations are safe to retry once for transient failures.
+                # Mutating tools are never retried automatically because they may have
+                # partially completed before returning an error.
+                if (
+                    not result.success
+                    and tool
+                    and not tool.is_mutating(tool_call.arguments)
+                    and not result.metadata.get("blocker_gate")
+                ):
+                    result = await self.session.tool_registry.invoke(
+                        tool_call.name,
+                        tool_call.arguments,
+                        self.config.cwd,
+                        self.session.hook_system,
+                        self.session.approval_manager,
+                    )
+                    result = self.session.guardian.after_tool(
+                        tool_call.name,
+                        tool_call.arguments,
+                        tool.kind,
+                        result,
+                    )
+
+                blocker_reason = self.session.blocker_gate.observe(
+                    tool_call.name,
+                    tool_call.arguments,
+                    result,
+                )
 
                 changed_path = result.metadata.get("path") if result.metadata else None
                 if (
@@ -206,6 +274,21 @@ class Agent:
                             self.session.hook_system,
                             self.session.approval_manager,
                         )
+                        shell_tool = self.session.tool_registry.get("shell")
+                        if shell_tool:
+                            verification = self.session.guardian.after_tool(
+                                "shell",
+                                {"command": check.command, "timeout": 120},
+                                shell_tool.kind,
+                                verification,
+                            )
+                        verification_blocker = self.session.blocker_gate.observe(
+                            "shell",
+                            {"command": check.command, "timeout": 120},
+                            verification,
+                        )
+                        if verification_blocker:
+                            blocker_reason = verification_blocker
                         yield AgentEvent.tool_call_complete(
                             verification_id,
                             "shell",
@@ -239,6 +322,15 @@ class Agent:
                     tool_result.tool_call_id,
                     tool_result.content,
                 )
+
+            blocker_notice = self.session.blocker_gate.consume_notice()
+            if blocker_notice:
+                self.session.context_manager.add_user_message(blocker_notice)
+                yield AgentEvent.blocker_detected(
+                    self.session.blocker_gate.reason or "Task blocked",
+                    self.session.blocker_gate.stats(),
+                )
+                enable_tools = False
 
             loop_detection_error = self.session.loop_detector.check_for_loop()
             if loop_detection_error:

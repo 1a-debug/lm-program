@@ -180,7 +180,7 @@ class TUI:
         self.console.print()
         self.console.print(panel)
 
-    def _extract_read_file_code(self, text: str) -> tuple[int, str] | None:
+    def _extract_read_file_code(self, text: str) -> tuple[int, str]:
         body = text
         header_match = re.match(r"^Showing lines (\d+)-(\d+) of (\d+)\n\n", text)
 
@@ -195,14 +195,19 @@ class TUI:
             # 2| print()
             m = re.match(r"^\s*(\d+)\|(.*)$", line)
             if not m:
-                return None
+                # Guardian and other middleware may append structured notices
+                # after the numbered file body. Keep the valid code collected
+                # so far instead of failing the renderer.
+                if code_lines:
+                    break
+                return 1, text
             line_no = int(m.group(1))
             if start_line is None:
                 start_line = line_no
             code_lines.append(m.group(2))
 
         if start_line is None:
-            return None
+            return 1, text
 
         return start_line, "\n".join(code_lines)
 
@@ -609,6 +614,9 @@ class TUI:
 - `/clear` - Clear conversation history
 - `/config` - Show current configuration
 - `/model <name>` - Change the model
+- `/trust` - Show the latest Agent Guardian trust report
+- `/guardian-demo` - Run deterministic Guardian security self-tests
+- `/demo-reset` - Reset the calculator fixture to its initial failing state
 - `/approval <mode>` - Change approval mode
 - `/setup` - Save or update API credentials
 - `/stats` - Show session statistics

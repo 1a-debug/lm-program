@@ -29,6 +29,13 @@ class AgentEventType(str, Enum):
     COMPACTION_COMPLETE = "compaction_complete"
     COMPACTION_ERROR = "compaction_error"
 
+    # Deterministic local safety supervision
+    GUARDIAN_ALERT = "guardian_alert"
+    TRUST_REPORT = "trust_report"
+
+    # Progress and external prerequisite control
+    BLOCKER_DETECTED = "blocker_detected"
+
 
 @dataclass
 class AgentEvent:
@@ -109,6 +116,27 @@ class AgentEvent:
         return cls(
             type=AgentEventType.COMPACTION_ERROR,
             data={"error": error},
+        )
+
+    @classmethod
+    def guardian_alert(cls, message: str, details: dict[str, Any] | None = None):
+        return cls(
+            type=AgentEventType.GUARDIAN_ALERT,
+            data={"message": message, "details": details or {}},
+        )
+
+    @classmethod
+    def trust_report(cls, report: dict[str, Any]):
+        return cls(
+            type=AgentEventType.TRUST_REPORT,
+            data={"report": report},
+        )
+
+    @classmethod
+    def blocker_detected(cls, reason: str, details: dict[str, Any] | None = None):
+        return cls(
+            type=AgentEventType.BLOCKER_DETECTED,
+            data={"reason": reason, "details": details or {}},
         )
 
     @classmethod
